@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Schrödinger equation, in motion</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- KaTeX renders the equations in the browser (no local LaTeX needed) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<!-- math.js parses the user's Ψ(x, y) and V(x, y), including complex numbers -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.min.js"></script>
+<!-- three.js draws the 3D surface -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<style>
+  :root {
+    --bg: #f4f6f9;
+    --surface: #ffffff;
+    --ink: #17212c;
+    --muted: #5a6875;
+    --line: #d5dce3;
+    --accent: #3a3fb0;
+    --mesh-base: #dfe4ea;
+    --pot: #7d8a97;
+    --error: #b3261e;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10161d; --surface: #18212b; --ink: #e5ebf1; --muted: #98a6b3;
+      --line: #2c3946; --accent: #8f94ff; --mesh-base: #26313d; --pot: #8796a5; --error: #ff8a80;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10161d; --surface: #18212b; --ink: #e5ebf1; --muted: #98a6b3;
+    --line: #2c3946; --accent: #8f94ff; --mesh-base: #26313d; --pot: #8796a5; --error: #ff8a80;
+  }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+    font-size: 1.075rem;
+    line-height: 1.6;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 48px 20px 64px; }
+  h1 { font-weight: 600; font-size: clamp(2rem, 5vw, 2.9rem); line-height: 1.1; letter-spacing: -0.01em; margin: 0 0 20px; }
+  h2 { font-weight: 600; font-size: 1.45rem; margin: 48px 0 12px; }
+  p { margin: 0 0 16px; max-width: 68ch; }
+  .lede { font-size: 1.2rem; color: var(--muted); }
+  .eq { margin: 22px 0; padding: 6px 0; overflow-x: auto; font-size: 1.12rem; }
+  .terms { margin: 0 0 16px; padding-left: 1.2em; max-width: 68ch; }
+  .terms li { margin-bottom: 6px; }
+
+  /* ---------- simulator ---------- */
+  .sim {
+    margin-top: 28px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px;
+    font-family: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.95rem;
+    line-height: 1.45;
+  }
+  .view { position: relative; }
+  canvas#plot {
+    display: block; width: 100%; height: clamp(300px, 62vw, 540px);
+    border-radius: 8px; cursor: grab; touch-action: none;
+  }
+  canvas#plot:active { cursor: grabbing; }
+  .view-hint { position: absolute; right: 10px; bottom: 8px; color: var(--muted); font-size: 0.8rem; pointer-events: none; }
+  .phase-key { position: absolute; left: 10px; bottom: 8px; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.8rem; pointer-events: none; }
+  .phase-key span.bar {
+    width: 90px; height: 8px; border-radius: 4px;
+    background: linear-gradient(90deg, hsl(0 75% 55%), hsl(60 75% 55%), hsl(120 75% 55%), hsl(180 75% 55%), hsl(240 75% 55%), hsl(300 75% 55%), hsl(360 75% 55%));
+  }
+
+  .readout { display: flex; flex-wrap: wrap; gap: 6px 22px; color: var(--muted); font-variant-numeric: tabular-nums; margin: 12px 0 10px; }
+  .readout b { color: var(--ink); font-weight: 500; }
+
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+  button {
+    font: inherit; font-weight: 500; padding: 8px 16px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:hover { filter: brightness(1.06); }
+  .inline { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+  select, input[type=range] { font: inherit; accent-color: var(--accent); }
+  select { padding: 5px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+
+  .scenarios { margin-top: 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+  .scenarios span { font-weight: 500; margin-right: 4px; }
+  .scenarios button { padding: 4px 11px; font-size: 0.88rem; font-weight: 400; }
+
+  .field { margin-top: 16px; }
+  .field label { display: block; font-weight: 500; margin-bottom: 6px; }
+  .expr {
+    width: 100%; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.93rem;
+    padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+  }
+  .help { color: var(--muted); font-size: 0.85rem; margin: 8px 0 14px; max-width: none; }
+  .help code { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .error { color: var(--error); margin-top: 10px; min-height: 1.4em; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>The Schrödinger equation, in motion</h1>
+  <p class="lede">
+    In quantum mechanics, a particle isn't described by a position and a velocity
+    but by a wave function Ψ(r, t). One equation tells you how it changes in time.
+  </p>
+
+  <h2>The equation</h2>
+  <p>For a single particle of mass \(m\) in a potential \(V(\mathbf r)\), the time-dependent Schrödinger equation reads</p>
+  <div class="eq">$$ i\hbar\,\frac{\partial \Psi(\mathbf r,t)}{\partial t} \;=\; -\frac{\hbar^2}{2m}\,\nabla^2 \Psi(\mathbf r,t) \;+\; V(\mathbf r)\,\Psi(\mathbf r,t), $$</div>
+  <p>where in two dimensions the Laplacian is \(\nabla^2 = \partial^2/\partial x^2 + \partial^2/\partial y^2\) (add \(\partial^2/\partial z^2\) in three).</p>
+  <ul class="terms">
+    <li>The left side is the rate of change of Ψ in time, multiplied by \(i\hbar\).</li>
+    <li>The Laplacian term is the kinetic energy. It's large where Ψ curves sharply, which is why tightly localized waves spread out.</li>
+    <li>The potential term bends, reflects and traps the wave, the way forces act on a classical particle.</li>
+  </ul>
+  <p>
+    Ψ itself is complex-valued and not directly observable. What you can measure is the
+    probability density \(|\Psi(\mathbf r,t)|^2\): the chance of finding the particle near
+    \(\mathbf r\) at time \(t\). Because the particle has to be somewhere, the wave function is normalized,
+  </p>
+  <div class="eq">$$ \int |\Psi(\mathbf r,t)|^2 \, d^2 r = 1, $$</div>
+  <p>and the Schrödinger equation keeps this integral constant at all times.</p>
+
+  <h2>A Gaussian wave packet</h2>
+  <p>
+    A free particle with a fairly well-defined position and momentum is described by a
+    Gaussian wave packet, centered at \(\mathbf r_0\) with width \(\sigma\) and mean wave vector \(\mathbf k_0\):
+  </p>
+  <div class="eq">$$ \Psi(\mathbf r,0) = \frac{1}{\sqrt{2\pi\sigma^2}} \exp\!\left(-\frac{|\mathbf r-\mathbf r_0|^2}{4\sigma^2}\right) e^{\,i\,\mathbf k_0\cdot \mathbf r}. $$</div>
+  <p>
+    The Gaussian envelope localizes the particle, and the plane-wave factor gives it momentum
+    \(\mathbf p_0 = \hbar \mathbf k_0\). Left alone, the packet moves at the group velocity
+    \(\mathbf v_g = \hbar \mathbf k_0/m\) and spreads in every direction: its width grows as
+    \(\sigma(t) = \sigma\sqrt{1 + \left(\hbar t / 2m\sigma^2\right)^2}\).
+  </p>
+  <p>
+    The simulation below solves the equation in two dimensions, so Ψ(x, y, t) can be drawn as a
+    3D surface: the height shows \(|\Psi|^2\) and the color shows the phase of Ψ. Since the
+    phase advances by \(\mathbf k_0\cdot\mathbf r\), a moving packet shows color stripes
+    perpendicular to its direction of motion. Units are \(\hbar = m = 1\).
+  </p>
+
+  <!-- ================= simulator ================= -->
+  <section class="sim" aria-label="Wave function simulator">
+    <div class="view">
+      <canvas id="plot" aria-label="3D surface plot of the wave function"></canvas>
+      <div class="phase-key" id="phaseKey">phase −π <span class="bar"></span> π</div>
+      <div class="view-hint">Drag to rotate, scroll to zoom</div>
+    </div>
+
+    <div class="readout">
+      <span>t = <b id="tOut">0.00</b></span>
+      <span>∫|Ψ|² on grid = <b id="normOut">1.0000</b></span>
+      <span>⟨x⟩ = <b id="xOut">0.00</b></span>
+      <span>⟨y⟩ = <b id="yOut">0.00</b></span>
+    </div>
+
+    <div class="controls">
+      <button id="playBtn" class="primary">Pause</button>
+      <button id="resetBtn">Restart</button>
+      <label class="inline">Speed <input id="speed" type="range" min="1" max="12" value="4"></label>
+      <label class="inline">Height
+        <select id="heightMode"><option value="prob">|Ψ|²</option><option value="re">Re Ψ</option></select>
+      </label>
+      <label class="inline">Color
+        <select id="colorMode"><option value="phase">Phase</option><option value="height">Height</option></select>
+      </label>
+      <label class="inline"><input type="checkbox" id="showV" checked> Show V</label>
+    </div>
+
+    <div class="scenarios" id="scenarios"><span>Try:</span></div>
+
+    <div class="field">
+      <label for="psiIn">Initial wave function Ψ(x, y, 0)</label>
+      <input id="psiIn" class="expr" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="vIn">Potential V(x, y)</label>
+      <input id="vIn" class="expr" spellcheck="false" autocomplete="off">
+    </div>
+    <p class="help">
+      Use <code>x</code> and <code>y</code> as variables and <code>i</code> for √−1. Functions like
+      <code>exp</code>, <code>sin</code>, <code>sqrt</code>, <code>abs</code> and constants
+      <code>pi</code>, <code>e</code> work; powers are written <code>^</code>. Conditions work too, e.g.
+      <code>abs(x) &lt; 0.3 ? 2.5 : 0</code>. Ψ is normalized automatically. The grid covers
+      −20 ≤ x, y ≤ 20, and its edges absorb the wave, so the norm drops once a packet runs off the grid.
+    </p>
+
+    <button id="applyBtn" class="primary">Apply and restart</button>
+    <div class="error" id="error" role="alert"></div>
+  </section>
+
+</main>
+
+<script>
+// ===================== grid & numerics =====================
+const N = 128;                          // grid points per axis (power of 2)
+const L = 20;                           // domain: -L .. L in x and y
+const DX = 2 * L / N;
+const DT = 0.01;                        // time step (ħ = m = 1)
+const NN = N * N;
+
+const xs = new Float64Array(N), ks = new Float64Array(N);
+for (let j = 0; j < N; j++) {
+  xs[j] = -L + j * DX;
+  ks[j] = (2 * Math.PI / (N * DX)) * (j < N / 2 ? j : j - N);
+}
+
+// arrays are stored row by row: index = iy * N + ix
+let re = new Float64Array(NN), im = new Float64Array(NN);
+let re0 = new Float64Array(NN), im0 = new Float64Array(NN);
+let V = new Float64Array(NN);
+let t = 0;
+
+const vr = new Float64Array(NN), vi = new Float64Array(NN);   // exp(-i V dt/2)
+const kr = new Float64Array(NN), ki = new Float64Array(NN);   // exp(-i k² dt/2)
+const mask = new Float64Array(NN);                           // absorbing edges
+{
+  const W = 3, gamma = 20;
+  const edge = x => { const d = L - Math.abs(x); return d < W ? Math.exp(-gamma * ((W - d) / W) ** 2 * DT) : 1; };
+  for (let iy = 0; iy < N; iy++) for (let ix = 0; ix < N; ix++) {
+    const p = iy * N + ix;
+    const a = -0.5 * (ks[ix] * ks[ix] + ks[iy] * ks[iy]) * DT;
+    kr[p] = Math.cos(a); ki[p] = Math.sin(a);
+    mask[p] = edge(xs[ix]) * edge(xs[iy]);
+  }
+}
+function updatePotentialPhase() {
+  for (let p = 0; p < NN; p++) { const a = -0.5 * V[p] * DT; vr[p] = Math.cos(a); vi[p] = Math.sin(a); }
+}
+
+// ---------- 1D radix-2 FFT and 2D FFT ----------
+const cosT = new Float64Array(N / 2), sinT = new Float64Array(N / 2);
+for (let k = 0; k < N / 2; k++) { cosT[k] = Math.cos(2 * Math.PI * k / N); sinT[k] = Math.sin(2 * Math.PI * k / N); }
+
+function fft1(a, b, inverse) {
+  for (let i = 1, j = 0; i < N; i++) {
+    let bit = N >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) { let s = a[i]; a[i] = a[j]; a[j] = s; s = b[i]; b[i] = b[j]; b[j] = s; }
+  }
+  const sign = inverse ? 1 : -1;
+  for (let len = 2; len <= N; len <<= 1) {
+    const half = len >> 1, stride = N / len;
+    for (let i = 0; i < N; i += len) {
+      for (let k = 0; k < half; k++) {
+        const wr = cosT[k * stride], wi = sign * sinT[k * stride];
+        const p = i + k, q = p + half;
+        const tr = a[q] * wr - b[q] * wi, ti = a[q] * wi + b[q] * wr;
+        a[q] = a[p] - tr; b[q] = b[p] - ti; a[p] += tr; b[p] += ti;
+      }
+    }
+  }
+}
+
+const ta = new Float64Array(N), tb = new Float64Array(N);
+function fft2(a, b, inverse) {
+  for (let iy = 0; iy < N; iy++) {                       // rows
+    const o = iy * N;
+    for (let ix = 0; ix < N; ix++) { ta[ix] = a[o + ix]; tb[ix] = b[o + ix]; }
+    fft1(ta, tb, inverse);
+    for (let ix = 0; ix < N; ix++) { a[o + ix] = ta[ix]; b[o + ix] = tb[ix]; }
+  }
+  for (let ix = 0; ix < N; ix++) {                       // columns
+    for (let iy = 0; iy < N; iy++) { ta[iy] = a[iy * N + ix]; tb[iy] = b[iy * N + ix]; }
+    fft1(ta, tb, inverse);
+    for (let iy = 0; iy < N; iy++) { a[iy * N + ix] = ta[iy]; b[iy * N + ix] = tb[iy]; }
+  }
+  if (inverse) for (let p = 0; p < NN; p++) { a[p] /= NN; b[p] /= NN; }
+}
+
+function mulPhase(pr, pi) {
+  for (let p = 0; p < NN; p++) {
+    const r = re[p], m = im[p];
+    re[p] = r * pr[p] - m * pi[p];
+    im[p] = r * pi[p] + m * pr[p];
+  }
+}
+
+// split-step Fourier: half potential, full kinetic (in k-space), half potential, absorb at edges
+function step() {
+  mulPhase(vr, vi);
+  fft2(re, im, false);
+  mulPhase(kr, ki);
+  fft2(re, im, true);
+  mulPhase(vr, vi);
+  for (let p = 0; p < NN; p++) { re[p] *= mask[p]; im[p] *= mask[p]; }
+  t += DT;
+}
+
+// ===================== parsing user input =====================
+function evaluateOnGrid(expr, label) {
+  let code;
+  try { code = math.compile(expr); } catch (e) { throw new Error(`${label}: ${e.message}`); }
+  const r = new Float64Array(NN), m = new Float64Array(NN);
+  const scope = { x: 0, y: 0 };
+  for (let iy = 0; iy < N; iy++) for (let ix = 0; ix < N; ix++) {
+    scope.x = xs[ix]; scope.y = xs[iy];
+    let v;
+    try { v = code.evaluate(scope); } catch (e) { throw new Error(`${label}: ${e.message}`); }
+    let a, b;
+    if (typeof v === 'number') { a = v; b = 0; }
+    else if (typeof v === 'boolean') { a = v ? 1 : 0; b = 0; }
+    else if (v && typeof v.re === 'number') { a = v.re; b = v.im; }
+    else throw new Error(`${label} doesn't give a number at (${xs[ix].toFixed(2)}, ${xs[iy].toFixed(2)}).`);
+    if (!isFinite(a) || !isFinite(b)) throw new Error(`${label} is not finite at (${xs[ix].toFixed(2)}, ${xs[iy].toFixed(2)}). Check for division by zero.`);
+    const p = iy * N + ix; r[p] = a; m[p] = b;
+  }
+  return [r, m];
+}
+
+let probScale = 1, ampScale = 1, vScale = 1;
+
+function applyInputs() {
+  const errBox = document.getElementById('error');
+  errBox.textContent = '';
+  try {
+    const [pr, pm] = evaluateOnGrid(document.getElementById('psiIn').value, 'Ψ(x, y, 0)');
+    const [Vr, Vm] = evaluateOnGrid(document.getElementById('vIn').value || '0', 'V(x, y)');
+    if (Vm.some(v => Math.abs(v) > 1e-12)) throw new Error('V(x, y) must be real.');
+
+    let norm = 0;
+    for (let p = 0; p < NN; p++) norm += (pr[p] * pr[p] + pm[p] * pm[p]) * DX * DX;
+    if (!(norm > 1e-14)) throw new Error('Ψ(x, y, 0) is zero everywhere on the grid (−20 to 20).');
+    const s = 1 / Math.sqrt(norm);
+    for (let p = 0; p < NN; p++) { pr[p] *= s; pm[p] *= s; }
+
+    re0 = pr; im0 = pm; V = Vr;
+    updatePotentialPhase();
+
+    let pmax = 0, vmax = 0;
+    for (let p = 0; p < NN; p++) {
+      pmax = Math.max(pmax, pr[p] * pr[p] + pm[p] * pm[p]);
+      vmax = Math.max(vmax, Math.abs(V[p]));
+    }
+    probScale = pmax;
+    ampScale = Math.sqrt(pmax);
+    vScale = vmax || 1;
+    updatePotentialMesh();
+    restart();
+  } catch (e) {
+    errBox.textContent = `Couldn't use this input: ${e.message}`;
+  }
+}
+
+function restart() {
+  re = Float64Array.from(re0);
+  im = Float64Array.from(im0);
+  t = 0;
+  render();
+}
+
+// ===================== 3D view (three.js) =====================
+const canvas = document.getElementById('plot');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 200);
+
+const S = 0.5;          // world units per x/y unit -> grid spans -10..10
+const HMAX = 5;         // world height of the initial |Ψ|² peak
+
+function makeGridGeometry() {
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array(NN * 3), col = new Float32Array(NN * 3);
+  for (let iy = 0; iy < N; iy++) for (let ix = 0; ix < N; ix++) {
+    const p = iy * N + ix;
+    pos[3 * p] = xs[ix] * S;      // world x
+    pos[3 * p + 1] = 0;           // world y = height
+    pos[3 * p + 2] = -xs[iy] * S; // world z = -y so +y points "away"
+  }
+  const idx = [];
+  for (let iy = 0; iy < N - 1; iy++) for (let ix = 0; ix < N - 1; ix++) {
+    const a = iy * N + ix, b = a + 1, c = a + N, d = c + 1;
+    idx.push(a, b, c, b, d, c);
+  }
+  g.setIndex(idx);
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
+}
+
+const waveGeo = makeGridGeometry();
+const waveMesh = new THREE.Mesh(waveGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+scene.add(waveMesh);
+
+const potGeo = makeGridGeometry();
+const potMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false });
+const potMesh = new THREE.Mesh(potGeo, potMat);
+scene.add(potMesh);
+
+const floor = new THREE.GridHelper(2 * L * S, 20);
+floor.material.transparent = true; floor.material.opacity = 0.35;
+floor.position.y = -0.01;
+scene.add(floor);
+
+function updatePotentialMesh() {
+  const pos = potGeo.attributes.position.array;
+  let any = false;
+  for (let p = 0; p < NN; p++) {
+    pos[3 * p + 1] = Math.min(V[p] / vScale, 1) * 3;
+    if (V[p] !== 0) any = true;
+  }
+  potGeo.attributes.position.needsUpdate = true;
+  potMesh.userData.hasPotential = any;
+}
+
+// camera: simple orbit around the origin
+let camTheta = -0.9, camPhi = 1.0, camDist = 30;
+function placeCamera() {
+  camera.position.set(
+    camDist * Math.sin(camPhi) * Math.sin(camTheta),
+    camDist * Math.cos(camPhi),
+    camDist * Math.sin(camPhi) * Math.cos(camTheta));
+  camera.lookAt(0, 1, 0);
+}
+let dragging = false, lastX = 0, lastY = 0;
+canvas.addEventListener('pointerdown', e => { dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  camTheta -= (e.clientX - lastX) * 0.008;
+  camPhi = Math.min(1.5, Math.max(0.15, camPhi - (e.clientY - lastY) * 0.008));
+  lastX = e.clientX; lastY = e.clientY;
+  if (!playing) render();
+});
+canvas.addEventListener('pointerup', () => { dragging = false; });
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  camDist = Math.min(70, Math.max(10, camDist * (1 + Math.sign(e.deltaY) * 0.08)));
+  if (!playing) render();
+}, { passive: false });
+
+const tmpColor = new THREE.Color(), baseColor = new THREE.Color();
+const lo = new THREE.Color('#2b4c8c'), mid = new THREE.Color('#1aa3a0'), hi = new THREE.Color('#f2c45a');
+
+function render() {
+  const css = getComputedStyle(document.documentElement);
+  baseColor.set(css.getPropertyValue('--mesh-base').trim());
+  potMat.color.set(css.getPropertyValue('--pot').trim());
+  floor.material.color.set(css.getPropertyValue('--line').trim());
+  potMesh.visible = document.getElementById('showV').checked && potMesh.userData.hasPotential;
+
+  const heightMode = document.getElementById('heightMode').value;
+  const colorMode = document.getElementById('colorMode').value;
+  document.getElementById('phaseKey').style.visibility = colorMode === 'phase' ? 'visible' : 'hidden';
+
+  const pos = waveGeo.attributes.position.array, col = waveGeo.attributes.color.array;
+  let norm = 0, xm = 0, ym = 0;
+  for (let iy = 0; iy < N; iy++) for (let ix = 0; ix < N; ix++) {
+    const p = iy * N + ix;
+    const r = re[p], m = im[p], prob = r * r + m * m;
+    norm += prob; xm += xs[ix] * prob; ym += xs[iy] * prob;
+
+    const h = heightMode === 'prob' ? prob / probScale : r / ampScale;
+    pos[3 * p + 1] = h * HMAX;
+
+    if (colorMode === 'phase') {
+      const amp = Math.sqrt(prob) / ampScale;
+      tmpColor.setHSL((Math.atan2(m, r) / (2 * Math.PI) + 1) % 1, 0.75, 0.55);
+      tmpColor.lerp(baseColor, 1 - Math.min(1, amp * 4));   // fade to base where Ψ is tiny
+    } else {
+      const u = Math.min(1, Math.abs(h));
+      if (u < 0.5) tmpColor.copy(lo).lerp(mid, u * 2); else tmpColor.copy(mid).lerp(hi, (u - 0.5) * 2);
+      tmpColor.lerp(baseColor, Math.max(0, 1 - u * 6));
+    }
+    col[3 * p] = tmpColor.r; col[3 * p + 1] = tmpColor.g; col[3 * p + 2] = tmpColor.b;
+  }
+  waveGeo.attributes.position.needsUpdate = true;
+  waveGeo.attributes.color.needsUpdate = true;
+
+  placeCamera();
+  renderer.render(scene, camera);
+
+  norm *= DX * DX;
+  document.getElementById('tOut').textContent = t.toFixed(2);
+  document.getElementById('normOut').textContent = norm.toFixed(4);
+  document.getElementById('xOut').textContent = norm > 1e-6 ? (xm * DX * DX / norm).toFixed(2) : '–';
+  document.getElementById('yOut').textContent = norm > 1e-6 ? (ym * DX * DX / norm).toFixed(2) : '–';
+}
+
+function resize() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  render();
+}
+
+// ===================== animation & UI =====================
+let playing = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const playBtn = document.getElementById('playBtn');
+playBtn.textContent = playing ? 'Pause' : 'Play';
+
+function loop() {
+  if (playing) {
+    const n = +document.getElementById('speed').value;
+    for (let s = 0; s < n; s++) step();
+    render();
+  }
+  requestAnimationFrame(loop);
+}
+
+playBtn.addEventListener('click', () => { playing = !playing; playBtn.textContent = playing ? 'Pause' : 'Play'; });
+document.getElementById('resetBtn').addEventListener('click', restart);
+document.getElementById('applyBtn').addEventListener('click', applyInputs);
+['psiIn', 'vIn'].forEach(id => document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') applyInputs(); }));
+['heightMode', 'colorMode', 'showV'].forEach(id => document.getElementById(id).addEventListener('change', render));
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
+window.addEventListener('resize', resize);
+
+const SCENARIOS = {
+  'Free packet': {
+    psi: 'exp(-((x + 8)^2 + y^2) / (4 * 1.5^2)) * exp(i * 2 * x)',
+    V: '0' },
+  'Packet at rest': {
+    psi: 'exp(-(x^2 + y^2) / (4 * 0.8^2))',
+    V: '0' },
+  'Tunneling': {
+    psi: 'exp(-((x + 8)^2 + y^2) / (4 * 1.5^2)) * exp(i * 2 * x)',
+    V: 'abs(x) < 0.3 ? 2.5 : 0' },
+  'Double slit': {
+    psi: 'exp(-((x + 8)^2 / (4 * 1.5^2) + y^2 / (4 * 3^2))) * exp(i * 3 * x)',
+    V: 'abs(x) < 0.4 and abs(abs(y) - 2) > 0.6 ? 30 : 0' },
+  'Harmonic orbit': {
+    psi: 'exp(-(x^2 + (y + 6)^2) / (4 * 1.83^2)) * exp(i * 0.9 * x)',
+    V: '0.01125 * (x^2 + y^2)' },
+};
+const scBox = document.getElementById('scenarios');
+for (const [name, sc] of Object.entries(SCENARIOS)) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = name;
+  b.addEventListener('click', () => {
+    document.getElementById('psiIn').value = sc.psi;
+    document.getElementById('vIn').value = sc.V;
+    applyInputs();
+  });
+  scBox.appendChild(b);
+}
+
+document.getElementById('psiIn').value = SCENARIOS['Free packet'].psi;
+document.getElementById('vIn').value = SCENARIOS['Free packet'].V;
+
+resize();
+applyInputs();
+requestAnimationFrame(loop);
+
+// render the equations once KaTeX has loaded
+window.addEventListener('load', () => {
+  if (window.renderMathInElement) {
+    renderMathInElement(document.querySelector('main'), {
+      delimiters: [{ left: '$$', right: '$$', display: true }, { left: '\\(', right: '\\)', display: false }],
+    });
+  }
+});
+</script>
+</body>
+</html>
